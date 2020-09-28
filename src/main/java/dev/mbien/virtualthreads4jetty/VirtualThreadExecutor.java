@@ -10,9 +10,14 @@ import org.eclipse.jetty.util.thread.ThreadPool;
 /**
  * Executes each task in a new virtual thread.
  * 
- * <p>Java's default ForkJoinPool is used as scheduler. To influence carrier
+ * <p>Java's default {@link java.util.concurrent.ForkJoinPool ForkJoinPool} is used as scheduler. To influence carrier
  * thread count use -Djdk.defaultScheduler.parallelism=N. Default is
  * {@link Runtime#availableProcessors()}.
+ * 
+ * <p>
+ * Async mode (FIFO) of 
+ * {@link java.util.concurrent.ForkJoinPool#ForkJoinPool(int, ForkJoinPool.ForkJoinWorkerThreadFactory, UncaughtExceptionHandler, boolean) new ForkJoinPool(..., asyncMode)}
+ * is true by default and can be changed to false by setting -Djdk.defaultScheduler.lifo=true. 
  * 
  * @author mbien
  */
@@ -21,21 +26,27 @@ public class VirtualThreadExecutor implements ThreadPool {
     private final ExecutorService executor;
 
     public VirtualThreadExecutor() {
-        executor = Executors.newThreadExecutor(
-                Thread.builder().virtual().name("jetty-vt#", 0).factory());
+        this(false);
+    }
+
+    public VirtualThreadExecutor(boolean disallowThreadLocals) {
+        Thread.Builder builder = Thread.builder().virtual().name("jetty-vt#", 0);
+        if(disallowThreadLocals)
+            builder.disallowThreadLocals();
+        
+        executor = Executors.newThreadExecutor(builder.factory());
         System.out.println("VirtualThreadExecutor is active."); // too early for logging
     }
     
     @Override
     public void execute(Runnable command) {
-//        System.out.println("executing: "+command);
         executor.execute(command);
     }
 
     @Override
     public void join() throws InterruptedException {
-        executor.shutdown();
-        executor.awaitTermination(3, TimeUnit.SECONDS);
+        // @see ExecutorThreadPool::join()
+        executor.awaitTermination(Long.MAX_VALUE, TimeUnit.MILLISECONDS);
     }
 
     // those are hopefully only used for stats/dashboards etc
